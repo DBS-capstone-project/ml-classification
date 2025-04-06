@@ -12,6 +12,7 @@ from io import BytesIO
 import matplotlib.pyplot as plt
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
+import requests
 from supabase import create_client, Client
 
 SUPABASE_URL = "Supabase url"
