@@ -1,2 +1,2 @@
 # AKU XIOMI README NOTE 15 PRO MAX
-![README PARAH]([https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRMUwYB4LJB2FyKiNFatYVPE2cHeOSjvj67Mg&s)
+![README PARAH]([(https://cdn.antaranews.com/cache/1200x800/2025/01/16/InShot_20250116_111246588.jpg)])
