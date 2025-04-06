@@ -1,2 +1,8 @@
 # AKU README NOTE 15 PRO MAX
 ![README PARAH](https://cdn.antaranews.com/cache/1200x800/2025/01/16/InShot_20250116_111246588.jpg)
+
+--
+
+# AKU NAK RTX 4090 24GB BUAT FINETUNE SETAN
+
+![NGIMPI](https://dlcdnwebimgs.asus.com/gain/8DBFA44E-4F28-4E59-945C-155EF4ACCF80/w717/h525)
