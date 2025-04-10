@@ -15,8 +15,8 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 from supabase import create_client, Client
 
-SUPABASE_URL = "https://gfnncacsgcklpvbpupvr.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmbm5jYWNzZ2NrbHB2YnB1cHZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM4NTUxNDcsImV4cCI6MjA1OTQzMTE0N30.Ws7hteSG4C6fUXLv1pLoidDRER1_smvg_7mKjVSqBQo"
+SUPABASE_URL = "ak jg mw"
+SUPABASE_KEY = "damn bruh"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
