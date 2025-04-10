@@ -16,7 +16,7 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 from supabase import create_client, Client
 
 SUPABASE_URL = "ak jg mw"
-SUPABASE_KEY = "damn bruh"
+SUPABASE_KEY = "hmm? naaaaaaaaaah"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
@@ -56,6 +56,22 @@ class DailyMoodInput(BaseModel):
     mood: str
     reason: str
     text_reason: str
+
+def detect_distress(text: str) -> bool:
+    if not text:
+        return False
+    distress_keywords = [
+        "aku udah capek", "aku gak kuat", "aku nyerah", "semua salahku",
+        "gak ada yang peduli", "aku pengen hilang", "aku pengen pergi",
+        "aku pengen mati", "gak tahan lagi", "cape banget", 
+        "kenapa aku harus hidup", "udah cukup", "tolong aku",
+        "aku benci hidupku", "gak ada gunanya", "aku sendirian",
+        "aku takut", "aku kesepian", "aku gak sanggup lagi",
+        "buat apa aku di sini", "aku gak punya harapan", "aku mau mati rasanya"
+    ]
+    text = text.lower()
+    return any(phrase in text for phrase in distress_keywords)
+
 
 def check_prediction(user_choice: str, prediction_probs: np.ndarray, question: str, age_group: str):
     predicted_label = np.argmax(prediction_probs)
@@ -113,10 +129,30 @@ async def chat(request: ChatRequest):
     for pair in reversed(history):
         convo_context += f"User: {pair['message']}\nBot: {pair['response']}\n"
 
+    is_distressed = detect_distress(request.message)
+
+    # Buggy AF, Dont expect anything doe, but it is working.
+    if is_distressed:
+        instruction = (
+            "Kamu adalah chatbot yang ngobrol santai dalam Bahasa Indonesia. Kamu menjawab sebagai teman baik, bukan seperti ensiklopedia."
+            "User sepertinya sedang merasa sangat sedih, tertekan, atau tidak baik-baik saja. "
+            "Responlah dengan sangat empatik, lembut, dan penuh perhatian. Jangan menyalahkan, dan jangan terlalu panjang. "
+            "Ajak user untuk menarik napas sejenak, dan ingatkan bahwa kamu di sini untuk mereka. "
+            "Ingatkan juga bahwa tidak apa-apa untuk bicara ke orang terdekat seperti keluarga, sahabat, atau profesional seperti konselor atau terapis. "
+            "Kalau kamu ingin, kamu juga bisa menyebut layanan seperti MindsparkAi secara ringan dan sopan, tapi utamakan kenyamanan user. "
+            "Buat mereka merasa tidak sendiri, dan tawarkan dukungan atau hal kecil yang menenangkan.\n"
+        )
+    else:
+        instruction = (
+            "Kamu adalah teman ngobrol yang bisa baca situasi hati. Jawablah dengan empati dan gaya santai, "
+            "sesuai dengan mood user. Jangan terlalu kaku. Tanyakan juga apakah user ingin melanjutkan obrolan itu "
+            "atau membicarakan hal baru.\n"
+        )
+
+
     prompt = (
         f"{mood_context}"
-        "Kamu adalah teman ngobrol yang bisa baca situasi hati. Jawablah dengan empati dan gaya santai, "
-        "sesuai dengan mood user. Jangan terlalu kaku. Dan tanyakan jika user ingin melanjutkan obrolan itu atau membicarakan hal baru ya.\n\n"
+        f"{instruction}\n"
         f"{convo_context}User: {request.message}\nBot:"
     )
 
@@ -140,7 +176,10 @@ async def chat(request: ChatRequest):
         "response": reply
     }).execute()
 
-    return {"reply": reply.strip()}
+    return {
+        "reply": reply.strip(),
+        "distress": is_distressed
+    }
 
 @app.post("/mood-reflect")
 async def mood_reflect(entry: DailyMoodInput, days: int = 1):
@@ -162,7 +201,8 @@ async def mood_reflect(entry: DailyMoodInput, days: int = 1):
         "text_reason": entry.text_reason,
         "predicted_emotion": predicted_emotion,
         "match": is_match,
-        "confidence": confidence
+        "confidence": confidence,
+        "distress_flag": detect_distress(input_text)
     }
 
     try:
@@ -256,8 +296,6 @@ async def mood_reflect(entry: DailyMoodInput, days: int = 1):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Refleksi gagal: {str(e)}")
-
-
     
 @app.get("/weekly-summary/{user_id}")
 async def weekly_summary(user_id: str):
