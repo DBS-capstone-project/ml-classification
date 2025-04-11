@@ -15,8 +15,8 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 from supabase import create_client, Client
 
-SUPABASE_URL = "ak jg mw"
-SUPABASE_KEY = "hmm? naaaaaaaaaah"
+SUPABASE_URL = "nicetry"
+SUPABASE_KEY = "lmfao"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
@@ -27,14 +27,7 @@ with open("tokenizer.pkl", "rb") as f:
 
 EMOTIONS = ["Joy", "Sadness", "Fear", "Anger", "Love", "Neutral"]
 
-emotion_mapping = {
-    0: "Anger",
-    1: "Fear",
-    2: "Joy",
-    3: "Love",
-    4: "Neutral",
-    5: "Sad"
-}
+emotion_mapping = {i: emo for i, emo in enumerate(EMOTIONS)}
 
 class PredictionRequest(BaseModel):
     text: str
@@ -57,6 +50,12 @@ class DailyMoodInput(BaseModel):
     reason: str
     text_reason: str
 
+def check_prediction(user_choice: str, prediction_probs: np.ndarray, question: str, age_group: str):
+    predicted_label = np.argmax(prediction_probs)
+    predicted_emotion = emotion_mapping.get(predicted_label, "Unknown")
+    is_matching = (user_choice == predicted_emotion)
+    return predicted_emotion, is_matching
+
 def detect_distress(text: str) -> bool:
     if not text:
         return False
@@ -72,36 +71,10 @@ def detect_distress(text: str) -> bool:
     text = text.lower()
     return any(phrase in text for phrase in distress_keywords)
 
-
-def check_prediction(user_choice: str, prediction_probs: np.ndarray, question: str, age_group: str):
-    predicted_label = np.argmax(prediction_probs)
-    predicted_emotion = emotion_mapping.get(predicted_label, "Unknown")
-    
-    is_matching = (user_choice == predicted_emotion)
-    return predicted_emotion, is_matching
-def log_emotion(entry: Dict):
-    try:
-        response = supabase.table("mood_log").insert(entry).execute()
-        if hasattr(response, 'error') and response.error:
-            print("Error logging emotion:", response.error)
-    except Exception as e:
-        print(f"Exception while logging emotion: {e}")
-
-def load_logs():
-    try:
-        response = supabase.table("mood_log").select("*").execute()
-        if hasattr(response, 'error') and response.error:
-            print("Error loading logs:", response.error)
-            return []
-        return response.data
-    except Exception as e:
-        print(f"Exception while loading logs: {e}")
-        return []
-    
 @app.post("/chat")
 async def chat(request: ChatRequest):
     history_resp = supabase.table("chat_history")\
-        .select("message,response")\
+        .select("message, response")\
         .eq("user_id", request.user_id)\
         .order("timestamp", desc=True)\
         .limit(10)\
@@ -119,8 +92,7 @@ async def chat(request: ChatRequest):
     if mood_data:
         last_mood = mood_data[0]
         mood_context = (
-            f"[Context: Mood terakhir user adalah '{last_mood['mood']}' "
-            f"dengan prediksi emosi '{last_mood['predicted_emotion']}'.]\n"
+            f"[Context: Mood terakhir user adalah '{last_mood['mood']}' dengan prediksi emosi '{last_mood['predicted_emotion']}'.]\n"
         )
     else:
         mood_context = "[Context: Belum ada data mood sebelumnya.]\n"
@@ -129,30 +101,11 @@ async def chat(request: ChatRequest):
     for pair in reversed(history):
         convo_context += f"User: {pair['message']}\nBot: {pair['response']}\n"
 
-    is_distressed = detect_distress(request.message)
-
-    # Buggy AF, Dont expect anything doe, but it is working.
-    if is_distressed:
-        instruction = (
-            "Kamu adalah chatbot yang ngobrol santai dalam Bahasa Indonesia. Kamu menjawab sebagai teman baik, bukan seperti ensiklopedia."
-            "User sepertinya sedang merasa sangat sedih, tertekan, atau tidak baik-baik saja. "
-            "Responlah dengan sangat empatik, lembut, dan penuh perhatian. Jangan menyalahkan, dan jangan terlalu panjang. "
-            "Ajak user untuk menarik napas sejenak, dan ingatkan bahwa kamu di sini untuk mereka. "
-            "Ingatkan juga bahwa tidak apa-apa untuk bicara ke orang terdekat seperti keluarga, sahabat, atau profesional seperti konselor atau terapis. "
-            "Kalau kamu ingin, kamu juga bisa menyebut layanan seperti MindsparkAi secara ringan dan sopan, tapi utamakan kenyamanan user. "
-            "Buat mereka merasa tidak sendiri, dan tawarkan dukungan atau hal kecil yang menenangkan.\n"
-        )
-    else:
-        instruction = (
-            "Kamu adalah teman ngobrol yang bisa baca situasi hati. Jawablah dengan empati dan gaya santai, "
-            "sesuai dengan mood user. Jangan terlalu kaku. Tanyakan juga apakah user ingin melanjutkan obrolan itu "
-            "atau membicarakan hal baru.\n"
-        )
-
-
     prompt = (
         f"{mood_context}"
-        f"{instruction}\n"
+        "Kamu adalah teman ngobrol yang bisa membaca situasi hati. "
+        "Jawablah dengan empati dan gaya santai, sesuaikan dengan mood user. "
+        "Tanyakan juga apakah user ingin melanjutkan obrolan atau membicarakan hal baru.\n\n"
         f"{convo_context}User: {request.message}\nBot:"
     )
 
@@ -170,15 +123,9 @@ async def chat(request: ChatRequest):
             except json.JSONDecodeError:
                 continue
 
-    supabase.table("chat_history").insert({
-        "user_id": request.user_id,
-        "message": request.message,
-        "response": reply
-    }).execute()
-
     return {
         "reply": reply.strip(),
-        "distress": is_distressed
+        "distress": detect_distress(request.message)
     }
 
 @app.post("/mood-reflect")
@@ -192,23 +139,6 @@ async def mood_reflect(entry: DailyMoodInput, days: int = 1):
         predicted_emotion, is_match = check_prediction(entry.reason, prediction, "", "")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-    data = {
-        "user_id": entry.user_id,
-        "timestamp": datetime.now().isoformat(),
-        "mood": entry.mood,
-        "reason": entry.reason,
-        "text_reason": entry.text_reason,
-        "predicted_emotion": predicted_emotion,
-        "match": is_match,
-        "confidence": confidence,
-        "distress_flag": detect_distress(input_text)
-    }
-
-    try:
-        supabase.table("daily_mood").insert(data).execute()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gagal menyimpan mood: {str(e)}")
 
     try:
         from_date = (datetime.now() - timedelta(days=days)).isoformat()
@@ -224,56 +154,42 @@ async def mood_reflect(entry: DailyMoodInput, days: int = 1):
             raise HTTPException(status_code=404, detail="Tidak ada data mood yang ditemukan.")
 
         logs = response.data
+        summary_prompt = (
+            "Kamu adalah teman refleksi yang santai tapi peduli. "
+            "Tugasmu adalah membuat ringkasan super singkat dari data emosi pengguna. "
+            "Gunakan bahasa sehari-hari yang to the point dan penuh empati. "
+            "Jangan bertele-tele. Langsung aja ke intinya.\n\n"
+            "Data:\n"
+        )
 
-        if not is_match:
-            summary_prompt = (
-                "Kamu adalah teman refleksi yang santai tapi peduli. "
-                "Tugasmu adalah membuat ringkasan super singkat dari perasaan dan cerita pengguna. "
-                "Gunakan bahasa sehari-hari yang santai, to the point, dan jangan bertele-tele. "
-                "Tambahkan satu saran ringan di akhir yaa.\n\n"
-                f"Emosi pengguna: {entry.mood}\n"
-                f"Alasan: {input_text}\n\n"
-                "Tolong berikan ringkasan dalam Bahasa Indonesia ya."
+        for log in logs:
+            summary_prompt += (
+                f"- [{log.get('timestamp')}], mood: {log.get('mood')}, "
+                f"alasan: {log.get('text_reason') or log.get('reason')}, "
+                f"prediksi emosi: {log.get('predicted_emotion')}, "
+                f"kecocokan: {'ya' if log.get('match') else 'tidak'}\n"
             )
-        else:
-            summary_prompt = (
-                "Kamu adalah teman refleksi yang santai tapi peduli. "
-                "Tugasmu adalah membuat ringkasan super singkat dari data emosi pengguna. "
-                "Gunakan bahasa sehari-hari yang santai, to the point, dan jangan bertele-tele. "
-                "Hindari kalimat pembuka seperti 'Berikut ringkasan...'. "
-                "Langsung aja ke intinya ya!\n\n"
-                "Data:\n"
-            )
-            for log in logs:
-                summary_prompt += (
-                    f"- [{log.get('timestamp')}], mood: {log.get('mood')}, "
-                    f"alasan: {log.get('text_reason') or log.get('reason')}, "
-                    f"prediksi emosi: {log.get('predicted_emotion')}, "
-                    f"kecocokan: {'ya' if log.get('match') else 'tidak'}\n"
-                )
-            summary_prompt += "\nTolong berikan ringkasan dalam Bahasa Indonesia ya."
 
+        summary_prompt += "\nTolong berikan ringkasan dalam Bahasa Indonesia ya."
         reflection_prompt = (
             "Kamu adalah teman refleksi yang perhatian, sabar, dan suportif. "
-            "Tugasmu adalah memberikan refleksi yang ringan tapi membantu pengguna memahami perasaannya. "
-            "Berikan saran singkat, validasi emosinya, dan beri dukungan ringan. "
-            "Gunakan gaya bahasa santai dan empatik, hindari bahasa formal ya.\n\n"
-            f"Emosi pengguna hari ini: {entry.mood}\n"
-            f"Alasannya: {input_text}\n\n"
-            "Tolong buat refleksi dalam Bahasa Indonesia ya, jangan terlalu panjang, dan cukup 2-3 paragraf ringan."
+            "Berikan refleksi singkat namun mendalam tentang data emosi hari ini. "
+            "Sertakan saran ringan untuk meningkatkan kesejahteraan emosional pengguna. "
+            "Gunakan bahasa yang santai dan empatik, maksimal 2-3 paragraf.\n\n"
+            f"Emosi hari ini: {entry.mood}\n"
+            f"Alasan: {input_text}\n\n"
+            "Tolong buat refleksi dalam Bahasa Indonesia."
         )
 
         def call_llama(prompt: str):
-            llama_response = requests.post(
+            llama_resp = requests.post(
                 "http://localhost:11434/api/generate",
                 json={"model": "llama3.2", "prompt": prompt, "stream": True}
             )
-
-            if llama_response.status_code != 200:
+            if llama_resp.status_code != 200:
                 raise HTTPException(status_code=500, detail="Gagal mendapatkan respon dari LLaMA.")
-
             result = ""
-            for line in llama_response.iter_lines(decode_unicode=True):
+            for line in llama_resp.iter_lines(decode_unicode=True):
                 if line.strip():
                     try:
                         chunk = json.loads(line)
@@ -286,7 +202,7 @@ async def mood_reflect(entry: DailyMoodInput, days: int = 1):
         refleksi = call_llama(reflection_prompt)
 
         return {
-            "message": "Mood saved & reflection generated",
+            "message": "Mood processed & reflection generated",
             "predicted_emotion": predicted_emotion,
             "match": is_match,
             "confidence": confidence,
@@ -296,7 +212,7 @@ async def mood_reflect(entry: DailyMoodInput, days: int = 1):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Refleksi gagal: {str(e)}")
-    
+
 @app.get("/weekly-summary/{user_id}")
 async def weekly_summary(user_id: str):
     try:
@@ -314,7 +230,6 @@ async def weekly_summary(user_id: str):
         if not logs:
             raise HTTPException(status_code=404, detail="Belum ada data mood minggu ini.")
 
-        # Build LLaMA prompt
         prompt = (
             "Tolong buat ringkasan refleksi minggu ini dari data mood dan emosi user berikut. "
             "Gunakan bahasa Indonesia yang santai, to the point, dan penuh empati. "
