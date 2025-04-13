@@ -15,8 +15,8 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 from supabase import create_client, Client
 
-SUPABASE_URL = "https://gfnncacsgcklpvbpupvr.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmbm5jYWNzZ2NrbHB2YnB1cHZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM4NTUxNDcsImV4cCI6MjA1OTQzMTE0N30.Ws7hteSG4C6fUXLv1pLoidDRER1_smvg_7mKjVSqBQo"
+SUPABASE_URL = ""
+SUPABASE_KEY = ""
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
@@ -356,6 +356,7 @@ async def weekly_summary(user_id: str):
 @app.get("/user-reflection-feedback/{user_id}")
 async def get_user_feedback(user_id: str):
     try:
+
         form_res = supabase.table("reflection_forms") \
             .select("*") \
             .eq("user_id", user_id) \
@@ -367,11 +368,13 @@ async def get_user_feedback(user_id: str):
             raise HTTPException(status_code=404, detail="No reflection data found")
 
         form = form_res.data[0]
-        
+
         prompt = (
-            "Tolong buatkan kesimpulan dan saran dari beberapa pertanyaan berikut"
-            "Gunakan bahasa Indonesia yang santai, langsung ke intinya saja, gausah dikasih Kesimpulan:, anda, Saran:"
-            "Pokoknya hanya perlu Cukup 2 sampai 3 kalimat saja.\n\nData:\n"
+            "Kamu adalah teman refleksi yang santai dan tidak kaku."
+            "Dari data pertanyaan berikut, buat ringkasan dan saran singkat."
+            "Tulis langsung jawabannya tanpa kata pembuka seperti 'Kesimpulan', 'Saran', atau 'Baiklah'."
+            "Gunakan bahasa sehari-hari, santai, dan hanya 2–3 kalimat saja.\n\n"
+            "Data:\n"
         )
 
         for i in range(1, 11):
