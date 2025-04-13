@@ -356,7 +356,6 @@ async def weekly_summary(user_id: str):
 @app.get("/user-reflection-feedback/{user_id}")
 async def get_user_feedback(user_id: str):
     try:
-        # 1. Get user's latest reflection data
         form_res = supabase.table("reflection_forms") \
             .select("*") \
             .eq("user_id", user_id) \
@@ -369,7 +368,6 @@ async def get_user_feedback(user_id: str):
 
         form = form_res.data[0]
         
-        # 2. Build clean prompt without exposing user_id
         prompt = (
             "Tolong buatkan kesimpulan dan saran dari beberapa pertanyaan berikut"
             "Gunakan bahasa Indonesia yang santai, langsung ke intinya saja, gausah dikasih Kesimpulan:, anda, Saran:"
