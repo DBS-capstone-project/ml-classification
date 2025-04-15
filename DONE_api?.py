@@ -16,8 +16,8 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 from supabase import create_client, Client
 
-SUPABASE_URL = ""
-SUPABASE_KEY = ""
+SUPABASE_URL = "done"
+SUPABASE_KEY = "done"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
@@ -58,11 +58,9 @@ class DailyMoodInput(BaseModel):
     reason: str
     text_reason: str
 
-# Request body model
 class ReflectionRequest(BaseModel):
     user_id: str
 
-# Response model (opsional)
 class ReflectionResponse(BaseModel):
     user_id: str
     category: str
@@ -93,35 +91,35 @@ def detect_distress(text: str) -> bool:
 @app.post("/chat")
 async def chat(request: ChatRequest):
     history_resp = supabase.table("chat_history")\
-        .select("message, response")\
+        .select("user_message, ai_response")\
         .eq("user_id", request.user_id)\
         .order("timestamp", desc=True)\
         .limit(10)\
         .execute()
     history = history_resp.data or []
 
-    mood_resp = supabase.table("daily_mood")\
-        .select("mood, predicted_emotion, timestamp")\
+    mood_resp = supabase.table("mood_tracking")\
+        .select("mood, created_at")\
         .eq("user_id", request.user_id)\
-        .order("timestamp", desc=True)\
+        .order("created_at", desc=True)\
         .limit(1)\
         .execute()
     mood_data = mood_resp.data
 
     if mood_data:
         last_mood = mood_data[0]
-        mood_context = (
-            f"[Context: Mood terakhir user adalah '{last_mood['mood']}' dengan prediksi emosi '{last_mood['predicted_emotion']}'.]\n"
-        )
+        mood_context = f"[Context: Mood terakhir user adalah '{last_mood['mood']}'.]\n"
     else:
         mood_context = "[Context: Belum ada data mood sebelumnya.]\n"
 
     convo_context = ""
     for pair in reversed(history):
-        convo_context += f"User: {pair['message']}\nBot: {pair['response']}\n"
+        convo_context += f"User: {pair['user_message']}\nBot: {pair['ai_response']}\n"
 
     prompt = (
         f"{mood_context}"
+        "Nama mu adalah Sparkle"
+        "Apabila user menanyakan waktu, hindari menjawab waktu, jelaskan karena perbedaan waktu di dunia dan posisi kamu saat ini."
         "Kamu adalah teman ngobrol yang bisa membaca situasi hati. "
         "Jawablah dengan empati dan gaya santai, sesuaikan dengan mood user. "
         "Tanyakan juga apakah user ingin melanjutkan obrolan atau membicarakan hal baru.\n\n"
@@ -150,6 +148,7 @@ async def chat(request: ChatRequest):
 @app.post("/mood-reflect")
 async def mood_reflect(entry: DailyMoodInput, days: int = 1):
     input_text = entry.text_reason or entry.reason
+
     padded = pad_sequences(tokenizer.texts_to_sequences([input_text]), maxlen=100, padding='post')
     prediction = model.predict(padded)[0]
     confidence = float(np.max(prediction))
@@ -160,12 +159,13 @@ async def mood_reflect(entry: DailyMoodInput, days: int = 1):
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        from_date = (datetime.now() - timedelta(days=days)).isoformat()
+        from_date = (datetime.now() - timedelta(days=days)).date().isoformat()
+
         response = (
-            supabase.table("daily_mood")
+            supabase.table("mood_tracking")
             .select("*")
             .eq("user_id", entry.user_id)
-            .gte("timestamp", from_date)
+            .gte("date", from_date)
             .execute()
         )
 
@@ -173,6 +173,7 @@ async def mood_reflect(entry: DailyMoodInput, days: int = 1):
             raise HTTPException(status_code=404, detail="Tidak ada data mood yang ditemukan.")
 
         logs = response.data
+
         summary_prompt = (
             "Kamu adalah teman refleksi yang santai tapi peduli. "
             "Tugasmu adalah membuat ringkasan super singkat dari data emosi pengguna. "
@@ -183,13 +184,12 @@ async def mood_reflect(entry: DailyMoodInput, days: int = 1):
 
         for log in logs:
             summary_prompt += (
-                f"- [{log.get('timestamp')}], mood: {log.get('mood')}, "
-                f"alasan: {log.get('text_reason') or log.get('reason')}, "
-                f"prediksi emosi: {log.get('predicted_emotion')}, "
-                f"kecocokan: {'ya' if log.get('match') else 'tidak'}\n"
+                f"- [Tanggal: {log.get('date')}], mood: {log.get('mood')}, "
+                f"alasan: {log.get('reason')}\n"
             )
 
         summary_prompt += "\nTolong berikan ringkasan dalam Bahasa Indonesia ya."
+
         reflection_prompt = (
             "Kamu adalah teman refleksi yang perhatian, sabar, dan suportif. "
             "Berikan refleksi singkat namun mendalam tentang data emosi hari ini. "
@@ -237,11 +237,11 @@ async def weekly_summary(user_id: str):
     try:
         from_date = (datetime.now() - timedelta(days=7)).isoformat()
         logs_resp = (
-            supabase.table("daily_mood")
+            supabase.table("mood_tracking")
             .select("*")
             .eq("user_id", user_id)
-            .gte("timestamp", from_date)
-            .order("timestamp")
+            .gte("created_at", from_date)
+            .order("created_at")
             .execute()
         )
 
@@ -257,10 +257,8 @@ async def weekly_summary(user_id: str):
 
         for log in logs:
             prompt += (
-                f"- [{log.get('timestamp')}], mood: {log.get('mood')}, "
-                f"alasan: {log.get('text_reason') or log.get('reason')}, "
-                f"prediksi emosi: {log.get('predicted_emotion')}, "
-                f"kecocokan: {'ya' if log.get('match') else 'tidak'}\n"
+                f"- [{log.get('created_at')}], mood: {log.get('mood')}, "
+                f"alasan: {log.get('reason')}\n"
             )
 
         prompt += "\nLangsung aja ke intinya ya."
@@ -286,13 +284,10 @@ async def weekly_summary(user_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal membuat ringkasan mingguan: {str(e)}")
 
-
 @app.post("/reflection-feedback", response_model=ReflectionResponse)
 async def get_user_feedback(request: ReflectionRequest):
     try:
         user_id = request.user_id
-
-        # Ambil data refleksi terbaru dari Supabase
         form_res = supabase.table("reflection_forms") \
             .select("*") \
             .eq("user_id", user_id) \
@@ -304,22 +299,19 @@ async def get_user_feedback(request: ReflectionRequest):
             raise HTTPException(status_code=404, detail="No reflection data found")
 
         form = form_res.data[0]
-        category = form.get("category", "umum")  # fallback kalau gak ada
-
-        # Kumpulkan pertanyaan
+        category = form.get("category", "umum")
         questions = []
         for i in range(1, 11):
-            if q := form.get(f"question_{i}"):
+            if (q := form.get(f"question_{i}")):
                 questions.append(q)
 
         if not questions:
             raise HTTPException(status_code=400, detail="No questions found in reflection data")
 
-        # Bangun prompt
         prompt = (
-            "Kamu adalah teman refleksi yang santai dan tidak kaku."
-            "Dari data pertanyaan berikut, buat ringkasan dan saran singkat."
-            "Tulis langsung jawabannya tanpa kata pembuka seperti 'Kesimpulan', 'Saran', atau 'Baiklah'."
+            "Kamu adalah teman refleksi yang santai dan tidak kaku. "
+            "Dari data pertanyaan berikut, buat ringkasan dan saran singkat. "
+            "Tulis langsung jawabannya tanpa kata pembuka seperti 'Kesimpulan', 'Saran', atau 'Baiklah'. "
             "Gunakan bahasa sehari-hari, santai, dan hanya 2–3 kalimat saja.\n\n"
             "Data:\n"
         )
@@ -328,7 +320,6 @@ async def get_user_feedback(request: ReflectionRequest):
             prompt += f"\n- {q}"
         prompt += "\nLangsung aja ke intinya ya."
 
-        # Kirim prompt ke LLaMA
         llama_response = requests.post(
             "http://localhost:11434/api/generate",
             json={"model": "llama3.2", "prompt": prompt, "stream": True}
